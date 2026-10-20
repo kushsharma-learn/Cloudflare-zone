@@ -1,0 +1,43 @@
+engine/variables.tf
+  s_36e3370c83ad88::t_ef62ec33fee01c 1-236
+.gitignore
+  s_e62ec13136b696::t_834aaa63836580 1-15
+engine/backend.tf
+  s_36e3370c83ad88::t_4b2caf8532c282 1-43
+dns-zones/example.com/settings/settings.tfvars
+  s_36e3370c83ad88::t_e024efd4dd6127 1-38
+engine/provider.tf
+  s_e62ec13136b696::t_1e1b31f98fc118 1-24
+README.md
+  s_36e3370c83ad88::t_c2bdc412675c56 1-222
+dns-zones/example.com/records/records.tfvars
+  s_36e3370c83ad88::t_ce7c94a4f8af46 1-75
+engine/outputs.tf
+  s_e62ec13136b696::t_09381a7842083c 1-37
+engine/main.tf
+  s_36e3370c83ad88::t_b9627f9ab9d8d2 1-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "b0ac36cfefebbe4b7203b1bd39445f74ad601a95",
+  "prompts": {},
+  "sessions": {
+    "s_36e3370c83ad88": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_36e3370c83ad88",
+        "model": "unknown"
+      },
+      "human_author": "kush sharma <kushgcem@gmail.com>"
+    },
+    "s_e62ec13136b696": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "chip-society",
+        "model": "unknown"
+      },
+      "human_author": "kush sharma <kushgcem@gmail.com>"
+    }
+  }
+}
