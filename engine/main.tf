@@ -36,7 +36,11 @@ resource "cloudflare_zone_dns_settings" "this" {
     type = var.foundation_dns ? "cloudflare.advanced" : "cloudflare.standard"
   }
 
+  # Nameserver TTL (Foundation DNS). null = Cloudflare default.
   ns_ttl = var.ns_ttl
+
+  # Custom SOA (Foundation DNS). null = Cloudflare defaults.
+  soa = var.soa
 }
 
 # ---- DNS RECORDS: one per entry in var.records -----------------------------

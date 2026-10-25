@@ -1,8 +1,10 @@
 name: Terraform
 
-# Plan on every pull request, apply when changes land on main.
-# One job PER ZONE (a matrix "loop" over every folder in dns-zones/), each with
-# its own state file in R2.
+# Plan on pull requests, apply on merge to main.
+# Runs one job PER ZONE (a matrix "loop"), each with its own state file in R2 —
+# but ONLY for the zones whose files changed, so adding/editing one zone never
+# re-runs (or fails) the others. Use the manual "Run workflow" button to target
+# a specific zone or all zones.
 on:
   pull_request:
     paths:
@@ -15,6 +17,12 @@ on:
       - "dns-zones/**"
       - "engine/**"
       - ".github/workflows/**"
+  workflow_dispatch:
+    inputs:
+      zone:
+        description: "Zone folder to run (leave empty to run ALL zones)."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -25,28 +33,66 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Cloudflare provider auth (manages the zones + records).
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  # R2 state backend auth.
   AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
 
 jobs:
-  # Discover every zone folder under dns-zones/. Each folder = one zone = one
-  # matrix job with its own state file.
+  # Decide which zone folders to act on.
   discover:
     runs-on: ubuntu-latest
     outputs:
       zones: ${{ steps.find.outputs.zones }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - id: find
         shell: bash
         run: |
-          zones=$(find dns-zones -mindepth 1 -maxdepth 1 -type d \
-            -exec basename {} \; | sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          set -euo pipefail
+
+          all_zones() {
+            find dns-zones -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -u
+          }
+
+          # changed zone folders between two git refs
+          changed_zones() {
+            git diff --name-only "$1" "$2" -- 'dns-zones/' \
+              | awk -F/ 'NF>=2 {print $2}' | sort -u
+          }
+
+          case "${{ github.event_name }}" in
+            workflow_dispatch)
+              if [ -n "${{ github.event.inputs.zone }}" ]; then
+                sel="${{ github.event.inputs.zone }}"
+              else
+                sel="$(all_zones)"
+              fi
+              ;;
+            pull_request)
+              git fetch --depth=1 origin "${{ github.base_ref }}"
+              sel="$(changed_zones "origin/${{ github.base_ref }}" HEAD)"
+              ;;
+            push)
+              before="${{ github.event.before }}"
+              if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
+                sel="$(changed_zones "HEAD~1" HEAD || true)"
+              else
+                sel="$(changed_zones "$before" "${{ github.sha }}")"
+              fi
+              ;;
+          esac
+
+          # keep only folders that still exist (ignore deletions), build JSON array
+          existing=""
+          for z in $sel; do
+            [ -d "dns-zones/$z" ] && existing="$existing$z"$'\n'
+          done
+          zones=$(printf '%s' "$existing" | jq -R -s -c 'split("\n") | map(select(length > 0))')
           echo "zones=$zones" >> "$GITHUB_OUTPUT"
-          echo "Discovered zones: $zones"
+          echo "Zones to run: $zones"
 
   terraform:
     needs: discover
@@ -54,8 +100,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # NOTE: GitHub caps a matrix at 256 jobs per run. For >256 zones, split
-      # zones across several directories/workflows or process them in batches.
+      # GitHub caps a matrix at 256 jobs per run. For >256 changed zones at once,
+      # split them across batches. max-parallel also respects API rate limits.
       max-parallel: 20
       matrix:
         zone: ${{ fromJson(needs.discover.outputs.zones) }}
@@ -109,7 +155,7 @@ jobs:
               body,
             });
 
-      # Only applies after the change is merged to main.
+      # Applies on merge to main, or when triggered manually.
       - name: Terraform Apply
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
         run: terraform apply -input=false -auto-approve tfplan

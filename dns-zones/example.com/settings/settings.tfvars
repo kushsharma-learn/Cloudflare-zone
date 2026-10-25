@@ -1,9 +1,0 @@
-account_id             = "b1d2a86cbf7d5358135fe2674a27b717"
-zone_name              = "tfcreated.kushlearn.in"
-zone_type              = "full"
-foundation_dns         = true
-ns_ttl                 = null
-ns_lookup_delay        = "30s"
-manage_subscription    = true
-plan                   = "enterprise"
-subscription_frequency = null

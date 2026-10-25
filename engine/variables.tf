@@ -39,9 +39,25 @@ variable "foundation_dns" {
 }
 
 variable "ns_ttl" {
-  description = "TTL in seconds for the zone's NS records (Foundation DNS). null = Cloudflare default."
+  description = "TTL in seconds for the zone's nameserver (NS) records (Foundation DNS). null = Cloudflare default. 30-86400."
   type        = number
   default     = null
+}
+
+# Custom SOA record (Foundation DNS / Enterprise). null = Cloudflare defaults.
+# When set, any field left null falls back to Cloudflare's default for that field.
+variable "soa" {
+  description = "Custom SOA record values (Foundation DNS). null = Cloudflare defaults."
+  type = object({
+    mname   = optional(string) # primary nameserver (null = Cloudflare-assigned)
+    rname   = optional(string) # zone admin email; first label = local part, e.g. "admin.example.com"
+    ttl     = optional(number) # TTL of the SOA record itself. 60-86400
+    refresh = optional(number) # secondary re-check interval. 600-86400
+    retry   = optional(number) # secondary retry after failure. 600-86400
+    expire  = optional(number) # secondary stops serving after this. 86400-2419200
+    min_ttl = optional(number) # negative-cache TTL. 60-86400
+  })
+  default = null
 }
 
 # Delay after enabling Foundation DNS before re-reading the zone so the
