@@ -1,20 +1,20 @@
 # ===========================================================================
 # PLUMBING — remote state in YOUR Cloudflare R2 bucket (S3-compatible API).
 # ---------------------------------------------------------------------------
-# Edit ONLY the two placeholders below (bucket name + account id in the
-# endpoint). Credentials are NEVER stored here — they are passed at execution
-# time (see README). Because this engine uses a Terraform workspace per zone,
-# each zone's state is stored under a separate path in the bucket.
+# Edit ONLY the bucket name + account id in the endpoint. Credentials are NEVER
+# stored here — they are passed at execution time (see README). The `key` is NOT
+# set here: there is ONE state file PER ZONE, supplied at init time, e.g.:
+#   terraform init -backend-config="key=zones/<zone>.tfstate"
+# The GitHub Actions workflow does this automatically for every zone folder.
 # ===========================================================================
 terraform {
   backend "s3" {
-    bucket = "XXXX-your-r2-bucket-name" # <-- your R2 bucket name
-    key    = "foundation-dns/terraform.tfstate"
+    bucket = "tf-state-lb" # <-- your R2 bucket name
     region = "auto"
 
     endpoints = {
       # Replace with your Cloudflare Account ID.
-      s3 = "https://XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.r2.cloudflarestorage.com"
+      s3 = "https://b1d2a86cbf7d5358135fe2674a27b717.r2.cloudflarestorage.com"
     }
 
     # R2 is not real AWS, so skip the AWS-specific checks.

@@ -1,13 +1,13 @@
 # ===========================================================================
 # PLUMBING — DO NOT EDIT.
-# Builds ONE Cloudflare zone from the tfvars in ../settings and ../tfvars:
-# the zone itself, its Enterprise subscription, Foundation DNS advanced
-# nameservers, and the DNS records you listed. DNSSEC is intentionally NOT
-# configured (left disabled).
+# Builds ONE Cloudflare zone from the tfvars passed via -var-file:
+#   dns-zones/<zone>/settings/settings.tfvars  -> zone + subscription + Foundation DNS
+#   dns-zones/<zone>/records/records.tfvars    -> that zone's DNS records
+# The GitHub Actions workflow runs this once per zone folder (a matrix "loop"),
+# each with its own state file. DNSSEC is intentionally NOT configured.
 # ===========================================================================
 
 # ---- ZONE: the domain itself ------------------------------------------------
-# type = "full" means Cloudflare is the authoritative (primary) DNS provider.
 resource "cloudflare_zone" "this" {
   account = {
     id = var.account_id
@@ -17,9 +17,6 @@ resource "cloudflare_zone" "this" {
 }
 
 # ---- SUBSCRIPTION: the zone's rate plan (e.g. Enterprise) -------------------
-# Created only when manage_subscription = true. Needs a token with Billing
-# Write. Set manage_subscription = false if your Enterprise contract already
-# provisions new zones automatically.
 resource "cloudflare_zone_subscription" "this" {
   count = var.manage_subscription ? 1 : 0
 
@@ -32,8 +29,6 @@ resource "cloudflare_zone_subscription" "this" {
 }
 
 # ---- DNS SETTINGS: this is where Foundation DNS is turned on ----------------
-# nameservers.type = "cloudflare.advanced" opts the zone in to Foundation DNS
-# advanced nameservers. "cloudflare.standard" keeps the regular nameservers.
 resource "cloudflare_zone_dns_settings" "this" {
   zone_id = cloudflare_zone.this.id
 
@@ -41,7 +36,6 @@ resource "cloudflare_zone_dns_settings" "this" {
     type = var.foundation_dns ? "cloudflare.advanced" : "cloudflare.standard"
   }
 
-  # Only sent when you set a value; otherwise Cloudflare's default is kept.
   ns_ttl = var.ns_ttl
 }
 
@@ -58,8 +52,20 @@ resource "cloudflare_dns_record" "record" {
   priority = each.value.priority
   comment  = each.value.comment
   tags     = each.value.tags
+  data     = each.value.data
+}
 
-  # Structured value for CAA, CERT, DNSKEY, DS, HTTPS, LOC, NAPTR, SMIMEA, SRV,
-  # SSHFP, SVCB, TLSA, URI. null for simple record types (which use content).
-  data = each.value.data
+# ---- WAIT then RE-READ the zone to surface the assigned nameservers ---------
+# The zone is created on STANDARD nameservers and only then converted to
+# Foundation DNS. We wait var.ns_lookup_delay after enabling advanced
+# nameservers, then read the zone fresh so name_servers reflects the assigned
+# foundationdns.com/.net/.org set.
+resource "time_sleep" "wait_for_nameservers" {
+  depends_on      = [cloudflare_zone_dns_settings.this]
+  create_duration = var.ns_lookup_delay
+}
+
+data "cloudflare_zone" "assigned" {
+  zone_id    = cloudflare_zone.this.id
+  depends_on = [time_sleep.wait_for_nameservers]
 }

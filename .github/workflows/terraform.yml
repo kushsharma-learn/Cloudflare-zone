@@ -1,0 +1,115 @@
+name: Terraform
+
+# Plan on every pull request, apply when changes land on main.
+# One job PER ZONE (a matrix "loop" over every folder in dns-zones/), each with
+# its own state file in R2.
+on:
+  pull_request:
+    paths:
+      - "dns-zones/**"
+      - "engine/**"
+      - ".github/workflows/**"
+  push:
+    branches: [main]
+    paths:
+      - "dns-zones/**"
+      - "engine/**"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Cloudflare provider auth (manages the zones + records).
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  # R2 state backend auth.
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+jobs:
+  # Discover every zone folder under dns-zones/. Each folder = one zone = one
+  # matrix job with its own state file.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      zones: ${{ steps.find.outputs.zones }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        shell: bash
+        run: |
+          zones=$(find dns-zones -mindepth 1 -maxdepth 1 -type d \
+            -exec basename {} \; | sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "zones=$zones" >> "$GITHUB_OUTPUT"
+          echo "Discovered zones: $zones"
+
+  terraform:
+    needs: discover
+    if: needs.discover.outputs.zones != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # NOTE: GitHub caps a matrix at 256 jobs per run. For >256 zones, split
+      # zones across several directories/workflows or process them in batches.
+      max-parallel: 20
+      matrix:
+        zone: ${{ fromJson(needs.discover.outputs.zones) }}
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Collect -var-file arguments
+        id: vars
+        shell: bash
+        run: |
+          args=$(find "../dns-zones/${{ matrix.zone }}" -type f -name '*.tfvars' | sort \
+            | sed 's/^/ -var-file=/' | tr -d '\n')
+          echo "args=$args" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform Init (per-zone state)
+        run: terraform init -reconfigure -input=false -backend-config="key=zones/${{ matrix.zone }}.tfstate"
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -input=false -no-color ${{ steps.vars.outputs.args }} -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Comment Plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          ZONE: ${{ matrix.zone }}
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync('engine/plan.txt', 'utf8');
+            const max = 60000;
+            if (plan.length > max) plan = plan.slice(0, max) + '\n... (truncated) ...';
+            const body = `#### Terraform Plan — zone \`${process.env.ZONE}\`\n`
+              + `<details><summary>Show plan</summary>\n\n\`\`\`terraform\n${plan}\n\`\`\`\n</details>`;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+      # Only applies after the change is merged to main.
+      - name: Terraform Apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform apply -input=false -auto-approve tfplan
