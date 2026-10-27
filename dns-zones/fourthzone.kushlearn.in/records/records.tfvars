@@ -42,6 +42,14 @@ records = {
     proxied = true
   }
 
+  kush = {
+    type    = "CNAME"
+    name    = "www"
+    content = "xyz.com"
+    ttl     = 1
+    proxied = true
+  }
+
   # MX — mail exchanger. MX needs a priority (lower = preferred).
   mx-primary = {
     type     = "MX"
