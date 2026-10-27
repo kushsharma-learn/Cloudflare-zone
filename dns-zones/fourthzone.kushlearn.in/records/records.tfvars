@@ -44,7 +44,7 @@ records = {
 
   kush = {
     type    = "CNAME"
-    name    = "www"
+    name    = "kush"
     content = "xyz.com"
     ttl     = 1
     proxied = true
